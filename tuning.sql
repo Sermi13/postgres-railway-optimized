@@ -1,4 +1,4 @@
--- Tuning inicial para PostgreSQL 17 no Railway.
+-- Tuning inicial para PostgreSQL 17/18 no Railway.
 --
 -- Ajuste os valores ao tamanho do banco e ao limite de memória do serviço.
 -- Execute como superuser:

@@ -1,8 +1,15 @@
-# PostgreSQL 17 na Railway: controle de RAM / page cache
+# PostgreSQL 17 e 18 na Railway: controle de RAM / page cache
+
+Imagens disponíveis:
+
+| Versão | Imagem |
+|---|---|
+| PostgreSQL 17 | `ghcr.io/sermi13/postgres-railway-optimized:17` |
+| PostgreSQL 18 | `ghcr.io/sermi13/postgres-railway-optimized:18` |
 
 Solução para o caso:
 
-- imagem `ghcr.io/railwayapp-templates/postgres-ssl:17`
+- imagem base `ghcr.io/railwayapp-templates/postgres-ssl:17` ou `:18`
 - depois de uma query grande (ou de um backup), o uso de RAM sobe para 10 GB+
 - o consumo não cai sozinho; só volta ao normal com restart/redeploy
 - a Railway cobra memória por uso, e o page cache do Linux entra na conta
@@ -173,7 +180,8 @@ PgBouncer em transaction pooling. Uma query que lê 10 GB sempre vai aquecer
 
 | Arquivo | Função |
 |---|---|
-| `Dockerfile` | parte da imagem original, instala `vmtouch`, troca só o entrypoint |
+| `Dockerfile` | imagem PostgreSQL 17; instala `vmtouch`, troca só o entrypoint |
+| `Dockerfile.18` | imagem PostgreSQL 18; mesma receita, com `PGDATA` fixado no path do template |
 | `entrypoint-wrapper.sh` | sobe o reclaimer e faz `exec` no `wrapper.sh` original |
 | `pg-cache-reclaim.sh` | loop de verificação + `vmtouch -e` com guardrails |
 | `diagnose-memory.sh` | diagnóstico read-only de cgroup, processos, settings e queries |
@@ -188,9 +196,18 @@ PgBouncer em transaction pooling. Uma query que lê 10 GB sempre vai aquecer
 Na raiz deste repositório:
 
 ```bash
+# PostgreSQL 17
 docker buildx build \
   --platform linux/amd64 \
+  -f Dockerfile \
   -t ghcr.io/sermi13/postgres-railway-optimized:17 \
+  --push .
+
+# PostgreSQL 18
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile.18 \
+  -t ghcr.io/sermi13/postgres-railway-optimized:18 \
   --push .
 ```
 
@@ -202,17 +219,29 @@ obrigatório.
 **Service → Settings → Source → Docker Image**:
 
 ```text
+# PostgreSQL 17
 ghcr.io/sermi13/postgres-railway-optimized:17
+
+# PostgreSQL 18
+ghcr.io/sermi13/postgres-railway-optimized:18
 ```
 
 Alternativamente, conecte este repositório no GitHub e deixe a Railway buildar
-o `Dockerfile`.
+o `Dockerfile` (17). Para 18, configure `RAILWAY_DOCKERFILE_PATH=Dockerfile.18`
+ou use a imagem já publicada.
 
 Mantenha:
 
 - volume em `/var/lib/postgresql/data`;
 - as mesmas variáveis de ambiente (`PGDATA`, `POSTGRES_PASSWORD`, PITR etc.);
 - o mesmo `CMD`/start command, se você já usa um.
+
+**Importante para o PostgreSQL 18:** a imagem oficial 18 usa por padrão
+`PGDATA=/var/lib/postgresql/18/docker`. O `Dockerfile.18` fixa
+`PGDATA=/var/lib/postgresql/data` para manter a convenção de volume do
+template Railway. Não aponte a imagem 18 para um volume que já contém dados do
+PostgreSQL 17: o PostgreSQL 18 não abre um data directory 17. Use um volume
+novo ou o fluxo de major upgrade da Railway.
 
 O `CMD` da imagem já inclui `-c max_connections=4000`. Se você usa um
 **Custom Start Command**, ele substitui o `CMD` inteiro; nesse caso inclua
@@ -344,15 +373,21 @@ paga com folga o esforço de operar a imagem custom.
 
 ## 8. Rollback
 
-Basta voltar a imagem do serviço para:
+Basta voltar a imagem do serviço para a versão correspondente do template:
 
 ```text
+# PostgreSQL 17
 ghcr.io/railwayapp-templates/postgres-ssl:17
+
+# PostgreSQL 18
+ghcr.io/railwayapp-templates/postgres-ssl:18
 ```
 
-O volume e os dados não são tocados. Se você aplicou `ALTER SYSTEM`, os
-parâmetros continuam no `postgresql.auto.conf`; reverta com
-`ALTER SYSTEM RESET ...` se quiser voltar ao default.
+Use a tag que corresponde ao data directory do volume; não misture 17 e 18 no
+mesmo volume. O volume e os dados não são tocados pelo rollback da imagem. Se
+você aplicou `ALTER SYSTEM`, os parâmetros continuam no
+`postgresql.auto.conf`; reverta com `ALTER SYSTEM RESET ...` se quiser voltar ao
+default.
 
 ---
 

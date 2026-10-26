@@ -134,12 +134,24 @@ SELECT backend_type,
        object,
        context,
        reads,
-       pg_size_pretty(reads * op_bytes) AS approx_read_bytes,
+       pg_size_pretty(
+         COALESCE(
+           (to_jsonb(io) ->> 'read_bytes')::numeric,
+           reads * current_setting('block_size')::numeric,
+           0
+         )::bigint
+       ) AS approx_read_bytes,
        writes,
-       pg_size_pretty(writes * op_bytes) AS approx_write_bytes
-FROM pg_stat_io
+       pg_size_pretty(
+         COALESCE(
+           (to_jsonb(io) ->> 'write_bytes')::numeric,
+           writes * current_setting('block_size')::numeric,
+           0
+         )::bigint
+       ) AS approx_write_bytes
+FROM pg_stat_io AS io
 WHERE reads > 0 OR writes > 0
-ORDER BY reads DESC
+ORDER BY reads DESC NULLS LAST
 LIMIT 15;
 SQL
 
